@@ -1,5 +1,4 @@
-<h1 style={{color:'red'}}>BINGO TEST</h1>
-  import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const PROMPTS = {
   faculty: [
@@ -55,22 +54,48 @@ const PROMPTS = {
     "Find someone doing something exciting at Foothill",
     "Meet a student from a different major"
   ]
-};
+} as const;
 
 const ROLE_LABELS = {
   faculty: "Faculty",
   student: "Student",
-  alumni: "Alumni",
+  alumni: "Alumni"
+} as const;
+
+type Role = keyof typeof PROMPTS;
+
+type Cell = {
+  id: string;
+  prompt: string;
+  type: "task" | "free";
+  completed: boolean;
+  proof: {
+    photoPreview: string | null;
+    fileName: string | null;
+  } | null;
+  interactionName: string;
+  pendingApproval: boolean;
 };
 
-const FREE_SPACE = {
+type Participant = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  card: Cell[];
+};
+
+const FREE_SPACE: Cell = {
   id: "free-space",
   prompt: "FREE SPACE",
   type: "free",
   completed: true,
+  proof: null,
+  interactionName: "",
+  pendingApproval: false
 };
 
-function mulberry32(seed) {
+function mulberry32(seed: number) {
   return function () {
     let t = (seed += 0x6d2b79f5);
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -79,7 +104,7 @@ function mulberry32(seed) {
   };
 }
 
-function stringToSeed(str) {
+function stringToSeed(str: string) {
   let h = 1779033703 ^ str.length;
   for (let i = 0; i < str.length; i++) {
     h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
@@ -92,7 +117,7 @@ function stringToSeed(str) {
   };
 }
 
-function seededShuffle(items, seedString) {
+function seededShuffle<T>(items: T[], seedString: string) {
   const seedFn = stringToSeed(seedString);
   const rng = mulberry32(seedFn());
   const copy = [...items];
@@ -103,26 +128,26 @@ function seededShuffle(items, seedString) {
   return copy;
 }
 
-function buildCard(role, name, email) {
+function buildCard(role: Role, name: string, email: string): Cell[] {
   const source = PROMPTS[role] || [];
-  const chosen = seededShuffle(source, `${role}-${name}-${email}`).slice(0, 8);
-  const grid = chosen.map((prompt, index) => ({
+  const chosen = seededShuffle([...source], `${role}-${name}-${email}`).slice(0, 8);
+  const grid: Cell[] = chosen.map((prompt, index) => ({
     id: `${role}-${index}-${prompt}`,
     prompt,
     type: "task",
     completed: false,
     proof: null,
     interactionName: "",
-    pendingApproval: false,
+    pendingApproval: false
   }));
 
-  grid.splice(4, 0, FREE_SPACE);
+  grid.splice(4, 0, { ...FREE_SPACE });
   return grid;
 }
 
-function getCompletedLines(card) {
+function getCompletedLines(card: Cell[]) {
   const size = 3;
-  const lines = [];
+  const lines: number[][] = [];
 
   for (let r = 0; r < size; r++) {
     lines.push([r * size, r * size + 1, r * size + 2]);
@@ -136,49 +161,47 @@ function getCompletedLines(card) {
   return lines.filter((line) => line.every((index) => card[index]?.completed));
 }
 
-function countCompletedLines(card) {
+function countCompletedLines(card: Cell[]) {
   return getCompletedLines(card).length;
 }
 
-function getCompletedLineCellIds(card) {
+function getCompletedLineCellIds(card: Cell[]) {
   return new Set(getCompletedLines(card).flat());
 }
 
-function getPhotoPreview(file) {
+function getPhotoPreview(file: File | null) {
   if (!file) return null;
   return URL.createObjectURL(file);
 }
 
-function triggerVibrate(pattern = [35]) {
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
+function triggerVibrate(pattern: number | number[] = [35]) {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
     navigator.vibrate(pattern);
   }
 }
 
-function Badge({ children, tone = "slate" }) {
-  const tones = {
-    slate: "bg-slate-100 text-slate-700 border-slate-200",
-    green: "bg-green-100 text-green-700 border-green-200",
-    amber: "bg-amber-100 text-amber-700 border-amber-200",
-    blue: "bg-blue-100 text-blue-700 border-blue-200",
-    rose: "bg-rose-100 text-rose-700 border-rose-200",
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${tones[tone]}`}>
-      {children}
-    </span>
-  );
-}
-
-// no default background; selfie cells will use the uploaded photo after completion
-
-function CardCell({ cell, onOpen, isInCompletedLine, isJustCompleted, isLineCelebrating, freeTone = "student" }) {
+function CardCell({
+  cell,
+  onOpen,
+  isInCompletedLine,
+  isJustCompleted,
+  isLineCelebrating,
+  freeTone = "student"
+}: {
+  cell: Cell;
+  onOpen: () => void;
+  isInCompletedLine: boolean;
+  isJustCompleted: boolean;
+  isLineCelebrating: boolean;
+  freeTone?: Role;
+}) {
   const participantFreeBg =
     freeTone === "faculty"
       ? "border-blue-300 bg-blue-100"
       : freeTone === "alumni"
       ? "border-orange-300 bg-orange-100"
       : "border-green-300 bg-green-100";
+
   return (
     <button
       onClick={onOpen}
@@ -224,9 +247,20 @@ function CardCell({ cell, onOpen, isInCompletedLine, isJustCompleted, isLineCele
   );
 }
 
-function TaskModal({ cell, onClose, onSubmit }) {
+function TaskModal({
+  cell,
+  onClose,
+  onSubmit
+}: {
+  cell: Cell | null;
+  onClose: () => void;
+  onSubmit: (data: {
+    interactionName: string;
+    proof: { photoPreview: string | null; fileName: string | null };
+  }) => void;
+}) {
   const [interactionName, setInteractionName] = useState(cell?.interactionName || "");
-  const [photoFile, setPhotoFile] = useState(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const photoPreview = useMemo(() => getPhotoPreview(photoFile), [photoFile]);
   const isPhotoTask = /take a selfie/i.test(cell?.prompt || "");
 
@@ -270,7 +304,7 @@ function TaskModal({ cell, onClose, onSubmit }) {
           ) : null}
 
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Name</label>
+            <label className="mb-1 block text-sm text-slate-600">Name</label>
             <input
               value={interactionName}
               onChange={(e) => setInteractionName(e.target.value)}
@@ -284,14 +318,14 @@ function TaskModal({ cell, onClose, onSubmit }) {
                 interactionName,
                 proof: {
                   photoPreview: isPhotoTask ? photoPreview : null,
-                  fileName: isPhotoTask ? photoFile?.name || null : null,
-                },
+                  fileName: isPhotoTask ? photoFile?.name || null : null
+                }
               })
             }
             disabled={!interactionName.trim() || (isPhotoTask && !photoFile)}
             className="w-full rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3 text-sm font-semibold uppercase tracking-[0.15em] text-white disabled:opacity-40"
           >
-            Send high‑five
+            Send high-five
           </button>
         </div>
       </div>
@@ -299,21 +333,24 @@ function TaskModal({ cell, onClose, onSubmit }) {
   );
 }
 
-function ParticipantBoard({ participant, onUpdate, people }) {
-  const [selectedCell, setSelectedCell] = useState(null);
+function ParticipantBoard({
+  participant,
+  onUpdate,
+  people
+}: {
+  participant: Participant;
+  onUpdate: React.Dispatch<React.SetStateAction<Participant[]>>;
+  people: Participant[];
+}) {
+  const [selectedCell, setSelectedCell] = useState<Cell | null>(null);
   const [showBingo, setShowBingo] = useState(false);
-  const [justCompletedCellId, setJustCompletedCellId] = useState(null);
-  const [celebratingLineCellIds, setCelebratingLineCellIds] = useState([]);
+  const [justCompletedCellId, setJustCompletedCellId] = useState<string | null>(null);
+  const [celebratingLineCellIds, setCelebratingLineCellIds] = useState<number[]>([]);
   const lines = countCompletedLines(participant.card);
   const completedLineCellIds = getCompletedLineCellIds(participant.card);
   const enteredNames = Array.from(
-    new Set(
-      participant.card
-        .map((cell) => cell.interactionName?.trim())
-        .filter(Boolean)
-    )
-  );
-  
+    new Set(participant.card.map((cell) => cell.interactionName?.trim()).filter(Boolean))
+  ) as string[];
 
   const approvalsWaitingForMe = people.flatMap((p) =>
     p.card
@@ -322,10 +359,16 @@ function ParticipantBoard({ participant, onUpdate, people }) {
           cell.pendingApproval &&
           cell.interactionName?.trim().toLowerCase() === participant.name.trim().toLowerCase()
       )
-      .map((cell) => ({ ownerId: p.id, ownerName: p.name, cellId: cell.id, prompt: cell.prompt, proof: cell.proof }))
+      .map((cell) => ({
+        ownerId: p.id,
+        ownerName: p.name,
+        cellId: cell.id,
+        prompt: cell.prompt,
+        proof: cell.proof
+      }))
   );
 
-  function approveRequest(request) {
+  function approveRequest(request: { ownerId: string; cellId: string }) {
     onUpdate((allPeople) =>
       allPeople.map((p) => {
         if (p.id !== request.ownerId) return p;
@@ -333,13 +376,18 @@ function ParticipantBoard({ participant, onUpdate, people }) {
           ...p,
           card: p.card.map((cell) =>
             cell.id === request.cellId ? { ...cell, pendingApproval: false, completed: true } : cell
-          ),
+          )
         };
       })
     );
   }
 
-  function submitProof(data) {
+  function submitProof(data: {
+    interactionName: string;
+    proof: { photoPreview: string | null; fileName: string | null };
+  }) {
+    if (!selectedCell) return;
+
     const previousLines = getCompletedLines(participant.card);
 
     const updatedCard = participant.card.map((cell) =>
@@ -349,7 +397,7 @@ function ParticipantBoard({ participant, onUpdate, people }) {
             interactionName: data.interactionName,
             proof: data.proof,
             pendingApproval: true,
-            completed: true,
+            completed: true
           }
         : cell
     );
@@ -361,7 +409,7 @@ function ParticipantBoard({ participant, onUpdate, people }) {
         if (p.id !== participant.id) return p;
         return {
           ...p,
-          card: updatedCard,
+          card: updatedCard
         };
       })
     );
@@ -383,6 +431,7 @@ function ParticipantBoard({ participant, onUpdate, people }) {
 
     const duration = 800;
     const end = Date.now() + duration;
+
     (function frame() {
       const colors = ["#16a34a", "#22c55e", "#4ade80"];
       const particle = document.createElement("div");
@@ -394,13 +443,13 @@ function ParticipantBoard({ participant, onUpdate, people }) {
       particle.style.top = "-10px";
       particle.style.borderRadius = "50%";
       particle.style.pointerEvents = "none";
-      particle.style.zIndex = 9999;
+      particle.style.zIndex = "9999";
       document.body.appendChild(particle);
 
       const fall = particle.animate(
         [
           { transform: "translateY(0px)", opacity: 1 },
-          { transform: "translateY(100vh)", opacity: 0 },
+          { transform: "translateY(100vh)", opacity: 0 }
         ],
         { duration: 900, easing: "ease-out" }
       );
@@ -421,8 +470,8 @@ function ParticipantBoard({ participant, onUpdate, people }) {
         </div>
 
         <div className="mx-auto max-w-3xl rounded-[24px] border border-slate-300 bg-white p-4 md:p-5">
-          <div className="grid grid-cols-3 overflow-hidden rounded-t-[14px] border border-slate-300">
-            {['B','I','N'].map((letter) => (
+          <div className="relative grid grid-cols-3 overflow-hidden rounded-t-[14px] border border-slate-300">
+            {["B", "I", "N"].map((letter) => (
               <div
                 key={letter}
                 className="flex aspect-[5/1.2] items-center justify-center border-r border-slate-300 bg-slate-50 text-2xl font-semibold tracking-[0.3em] text-slate-900 last:border-r-0 sm:text-3xl md:text-4xl"
@@ -437,14 +486,14 @@ function ParticipantBoard({ participant, onUpdate, people }) {
           </div>
 
           <div className="relative grid grid-cols-3 overflow-hidden rounded-b-[14px] border-l border-r border-b border-slate-300">
-            {participant.card.map((cell) => (
+            {participant.card.map((cell, index) => (
               <CardCell
                 key={cell.id}
                 cell={cell}
                 freeTone={participant.role}
-                isInCompletedLine={completedLineCellIds.has(participant.card.indexOf(cell))}
+                isInCompletedLine={completedLineCellIds.has(index)}
                 isJustCompleted={justCompletedCellId === cell.id}
-                isLineCelebrating={celebratingLineCellIds.includes(participant.card.indexOf(cell))}
+                isLineCelebrating={celebratingLineCellIds.includes(index)}
                 onOpen={() => cell.type !== "free" && setSelectedCell(cell)}
               />
             ))}
@@ -467,7 +516,6 @@ function ParticipantBoard({ participant, onUpdate, people }) {
                     className="mt-3 h-40 w-full rounded-2xl object-cover"
                   />
                 ) : null}
-                {request.proof?.note ? <div className="mt-2 text-sm text-slate-500">{request.proof.note}</div> : null}
                 <button
                   onClick={() => approveRequest(request)}
                   className="mt-3 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
@@ -509,18 +557,23 @@ function ParticipantBoard({ participant, onUpdate, people }) {
         </div>
       ) : null}
 
-      <TaskModal key={selectedCell?.id || "empty"} cell={selectedCell} onClose={() => setSelectedCell(null)} onSubmit={submitProof} />
+      <TaskModal
+        key={selectedCell?.id || "empty"}
+        cell={selectedCell}
+        onClose={() => setSelectedCell(null)}
+        onSubmit={submitProof}
+      />
     </div>
   );
 }
 
-function AdminPanel({ people }) {
+function AdminPanel({ people }: { people: Participant[] }) {
   const leaderboard = people
     .map((p) => ({
       ...p,
       lines: countCompletedLines(p.card),
       completedSquares: p.card.filter((c) => c.completed).length,
-      pendingSquares: p.card.filter((c) => c.pendingApproval).length,
+      pendingSquares: p.card.filter((c) => c.pendingApproval).length
     }))
     .sort((a, b) => b.lines - a.lines || b.completedSquares - a.completedSquares);
 
@@ -584,35 +637,35 @@ function AdminPanel({ people }) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState("landing");
-  const [role, setRole] = useState("");
+  const [mode, setMode] = useState<"landing" | "participant" | "admin">("landing");
+  const [role, setRole] = useState<Role | "">("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [people, setPeople] = useState([
+  const [people, setPeople] = useState<Participant[]>([
     {
       id: "demo-student",
       name: "Ari",
       email: "ari@example.edu",
       role: "student",
-      card: buildCard("student", "Ari", "ari@example.edu"),
+      card: buildCard("student", "Ari", "ari@example.edu")
     },
     {
       id: "demo-faculty",
       name: "Prof. Chen",
       email: "chen@example.edu",
       role: "faculty",
-      card: buildCard("faculty", "Prof. Chen", "chen@example.edu"),
+      card: buildCard("faculty", "Prof. Chen", "chen@example.edu")
     },
     {
       id: "demo-alumni",
       name: "Maya",
       email: "maya@example.edu",
       role: "alumni",
-      card: buildCard("alumni", "Maya", "maya@example.edu"),
-    },
+      card: buildCard("alumni", "Maya", "maya@example.edu")
+    }
   ]);
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [registrationStep, setRegistrationStep] = useState("role");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [registrationStep, setRegistrationStep] = useState<"role" | "details">("role");
 
   const currentUser = useMemo(
     () => people.find((p) => p.id === currentUserId) || null,
@@ -621,14 +674,16 @@ export default function App() {
 
   function registerParticipant() {
     if (!role || !name.trim() || !email.trim()) return;
+
     const id = `user-${Date.now()}`;
-    const person = {
+    const person: Participant = {
       id,
       name: name.trim(),
       email: email.trim(),
       role,
-      card: buildCard(role, name.trim(), email.trim()),
+      card: buildCard(role, name.trim(), email.trim())
     };
+
     setPeople((prev) => [...prev, person]);
     setCurrentUserId(id);
     setMode("participant");
@@ -650,12 +705,12 @@ export default function App() {
                     {[
                       ["student", "STUDENT"],
                       ["alumni", "ALUMNI"],
-                      ["faculty", "FACULTY"],
+                      ["faculty", "FACULTY"]
                     ].map(([value, label]) => (
                       <button
                         key={value}
                         onClick={() => {
-                          setRole(value);
+                          setRole(value as Role);
                           setRegistrationStep("details");
                         }}
                         className="flex w-full items-center justify-center rounded-2xl border border-slate-300 px-4 py-5 text-lg font-medium tracking-[0.18em] text-slate-900 transition hover:bg-slate-50"
@@ -675,7 +730,7 @@ export default function App() {
                   </button>
 
                   <div className="mb-8 text-center">
-                    <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{ROLE_LABELS[role]}</div>
+                    <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{ROLE_LABELS[role as Role]}</div>
                     <h2 className="mt-3 text-2xl font-semibold text-slate-900">Enter your info</h2>
                   </div>
 
