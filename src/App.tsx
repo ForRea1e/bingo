@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+<h1 style={{color:'red'}}>BINGO TEST</h1>
+  import React, { useEffect, useMemo, useState } from "react";
 
 const PROMPTS = {
   faculty: [
